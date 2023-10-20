@@ -717,6 +717,6 @@ void fill_pinfo(struct proc *curr_proc, struct pinfo *in) {
 
   in->ppid = curr_proc->parent->pid;
   in->page_usage = total_page_count;
-  in->syscall_count = curr_proc->num_syscalls;
+  in->syscall_count = curr_proc->num_syscalls - 1;
   release(&curr_proc->lock);
 }

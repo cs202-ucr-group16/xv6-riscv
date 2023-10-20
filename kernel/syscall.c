@@ -83,7 +83,7 @@ argstr(int n, char *buf, int max)
 static uint64 total_num_syscalls = 0;
 
 int get_total_num_syscalls(void) {
-  return total_num_syscalls;
+  return total_num_syscalls - 1;
 }
 
 // Prototypes for the functions that handle system calls.

@@ -91,7 +91,7 @@ struct proc {
   int killed;                  // If non-zero, have been killed
   int xstate;                  // Exit status to be returned to parent's wait
   int pid;                     // Process ID
-
+  int tick_count;               //ticket count;
   // wait_lock must be held when using this:
   struct proc *parent;         // Parent process
 
@@ -112,3 +112,4 @@ struct pinfo {
   int syscall_count;
   int page_usage;
 };
+void sched_statistics(void);

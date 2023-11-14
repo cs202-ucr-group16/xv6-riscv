@@ -461,6 +461,7 @@ scheduler(void)
         // before jumping back to us.
         p->state = RUNNING;
         c->proc = p;
+        p->tick_count++;  // Increment tick count here
         swtch(&c->context, &p->context);
 
         // Process is done running for now.
@@ -720,3 +721,17 @@ void fill_pinfo(struct proc *curr_proc, struct pinfo *in) {
   in->syscall_count = curr_proc->num_syscalls;
   release(&curr_proc->lock);
 }
+
+//added for lab 2, part 1
+void sched_statistics(void) {
+  struct proc *p;
+
+  for(p = proc; p < &proc[NPROC]; p++) {
+    acquire(&p->lock);
+    if(p->state != UNUSED) {
+      printf("%d(%s): ticks: %d\n", p->pid, p->name, p->tick_count);
+    }
+    release(&p->lock);
+  }
+}
+

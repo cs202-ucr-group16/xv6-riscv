@@ -79,6 +79,13 @@ argstr(int n, char *buf, int max)
   return fetchstr(addr, buf, max);
 }
 
+// Total number of syscalls done by the system so far.
+static uint64 total_num_syscalls = 0;
+
+int get_total_num_syscalls(void) {
+  return total_num_syscalls - 1;
+}
+
 // Prototypes for the functions that handle system calls.
 extern uint64 sys_fork(void);
 extern uint64 sys_exit(void);
@@ -101,32 +108,41 @@ extern uint64 sys_unlink(void);
 extern uint64 sys_link(void);
 extern uint64 sys_mkdir(void);
 extern uint64 sys_close(void);
+extern uint64 sys_sysinfo(void);
+extern uint64 sys_procinfo(void);
+extern uint64 sys_sched_statistics(void);
+extern uint64 sys_sched_tickets(void);
 
 // An array mapping syscall numbers from syscall.h
 // to the function that handles the system call.
 static uint64 (*syscalls[])(void) = {
-[SYS_fork]    sys_fork,
-[SYS_exit]    sys_exit,
-[SYS_wait]    sys_wait,
-[SYS_pipe]    sys_pipe,
-[SYS_read]    sys_read,
-[SYS_kill]    sys_kill,
-[SYS_exec]    sys_exec,
-[SYS_fstat]   sys_fstat,
-[SYS_chdir]   sys_chdir,
-[SYS_dup]     sys_dup,
-[SYS_getpid]  sys_getpid,
-[SYS_sbrk]    sys_sbrk,
-[SYS_sleep]   sys_sleep,
-[SYS_uptime]  sys_uptime,
-[SYS_open]    sys_open,
-[SYS_write]   sys_write,
-[SYS_mknod]   sys_mknod,
-[SYS_unlink]  sys_unlink,
-[SYS_link]    sys_link,
-[SYS_mkdir]   sys_mkdir,
-[SYS_close]   sys_close,
+[SYS_fork]      sys_fork,
+[SYS_exit]      sys_exit,
+[SYS_wait]      sys_wait,
+[SYS_pipe]      sys_pipe,
+[SYS_read]      sys_read,
+[SYS_kill]      sys_kill,
+[SYS_exec]      sys_exec,
+[SYS_fstat]     sys_fstat,
+[SYS_chdir]     sys_chdir,
+[SYS_dup]       sys_dup,
+[SYS_getpid]    sys_getpid,
+[SYS_sbrk]      sys_sbrk,
+[SYS_sleep]     sys_sleep,
+[SYS_uptime]    sys_uptime,
+[SYS_open]      sys_open,
+[SYS_write]     sys_write,
+[SYS_mknod]     sys_mknod,
+[SYS_unlink]    sys_unlink,
+[SYS_link]      sys_link,
+[SYS_mkdir]     sys_mkdir,
+[SYS_close]     sys_close,
+[SYS_sysinfo]   sys_sysinfo,
+[SYS_procinfo]  sys_procinfo,
+[SYS_sched_statistics]  sys_sched_statistics,
+[SYS_sched_tickets] sys_sched_tickets
 };
+
 
 void
 syscall(void)
@@ -136,6 +152,10 @@ syscall(void)
 
   num = p->trapframe->a7;
   if(num > 0 && num < NELEM(syscalls) && syscalls[num]) {
+    // Increase the number of syscalls done by this process.
+    p->num_syscalls++;
+    // Increase the number of syscalls so far done by the system.
+    total_num_syscalls++;
     // Use num to lookup the system call function for num, call it,
     // and store its return value in p->trapframe->a0
     p->trapframe->a0 = syscalls[num]();

@@ -89,3 +89,61 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+uint64
+sys_sysinfo(void)
+{
+  int param;
+  argint(0, &param);
+
+  if (param == 0) {
+    return total_active_process_count();
+  }else if (param == 1) {
+    return get_total_num_syscalls();
+  }else if (param == 2) {
+    return num_free_pages();
+  }
+  
+  return -1;
+}
+
+uint64
+sys_procinfo(void)
+{
+  uint64 pinfo_ptr; // user pointer to pinfo struct to be filled.
+  argaddr(0, &pinfo_ptr);
+
+  if (pinfo_ptr == 0) {
+    // User provided nullptr.
+    return -1;
+  }
+  
+  struct pinfo in;
+  struct proc *p = myproc();
+
+  // fills the pinfo information from current process.
+  fill_pinfo(p, &in);
+
+  // copy the pinfo struct back to user space.
+  if(copyout(p->pagetable, pinfo_ptr, (char *)&in, sizeof(in)) < 0)
+      return -1;
+  return 0;
+}
+
+uint64
+sys_sched_statistics(void)
+{
+  sched_statistics();
+  return 0;
+}
+
+uint64
+sys_sched_tickets(void)
+{
+  uint64 tick;
+  argaddr(0,(void *)&tick);
+  sched_tickets(tick);
+  return 0;
+}
+
+

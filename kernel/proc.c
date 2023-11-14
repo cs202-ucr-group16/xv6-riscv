@@ -14,6 +14,8 @@ struct proc *initproc;
 
 int nextpid = 1;
 struct spinlock pid_lock;
+int def_ticket = 10000; // Setting default value to 10000
+int def_k = 10000;  // setting k value as 10000 as given
 
 extern void forkret(void);
 static void freeproc(struct proc *p);
@@ -113,7 +115,11 @@ allocproc(void)
 
   for(p = proc; p < &proc[NPROC]; p++) {
     acquire(&p->lock);
+    p->ticket_val = def_ticket;
+    p->pass = 0;
+    p->stride =  def_k/ p->ticket_val;
     if(p->state == UNUSED) {
+      // p->ticket_val;
       goto found;
     } else {
       release(&p->lock);
@@ -124,7 +130,8 @@ allocproc(void)
 found:
   p->pid = allocpid();
   p->state = USED;
-
+  p->num_syscalls = 0;
+  
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
     freeproc(p);
@@ -680,4 +687,63 @@ procdump(void)
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
+}
+
+// Returns the total number of active process in the system.
+// (ready, running, waiting, or zombie).
+int total_active_process_count(void) {
+  struct proc *p;
+  int total_num = 0;
+
+ for(p = proc; p < &proc[NPROC]; p++) {
+    acquire(&p->lock);
+    if(p->state == RUNNABLE ||
+       p-> state == RUNNING ||
+       p-> state == ZOMBIE) {
+
+      total_num++;
+    }
+
+    release(&p->lock);
+  }
+
+  return total_num;
+}
+
+// Fills pinfo struct based on the current process.
+void fill_pinfo(struct proc *curr_proc, struct pinfo *in) {
+  acquire(&curr_proc->lock);
+
+  int proc_used_bytes = curr_proc->sz;
+  int page_size = 4096;
+
+  // Efficient ivide with ceiling.
+  // Prone to overflow!!
+  int total_page_count = (proc_used_bytes + page_size - 1) / page_size;  
+
+  in->ppid = curr_proc->parent->pid;
+  in->page_usage = total_page_count;
+  in->syscall_count = curr_proc->num_syscalls - 1;
+  release(&curr_proc->lock);
+}
+
+int sched_statistics(void){
+  struct proc *p = myproc();
+  for(p = proc; p < &proc[NPROC]; p++){
+    if(p->state != UNUSED){
+      printf("%d(%s): Tickets: %d, No. Tickets %d\n", p->pid,p->name, p->ticket_val, p->num_ticket);
+    }
+  }
+    return 0;
+  
+}
+
+int sched_tickets(int ticket){
+  struct proc *p = myproc();
+
+  if(ticket < 1 || ticket > 10000)
+    return -1;
+
+  p->ticket_val = ticket;
+  return 0;  
 }

@@ -12,7 +12,7 @@ sys_exit(void)
   int n;
   argint(0, &n);
   exit(n);
-  return 0;  // not reached
+  return 0; // not reached
 }
 
 uint64
@@ -43,7 +43,7 @@ sys_sbrk(void)
 
   argint(0, &n);
   addr = myproc()->sz;
-  if(growproc(n) < 0)
+  if (growproc(n) < 0)
     return -1;
   return addr;
 }
@@ -57,8 +57,10 @@ sys_sleep(void)
   argint(0, &n);
   acquire(&tickslock);
   ticks0 = ticks;
-  while(ticks - ticks0 < n){
-    if(killed(myproc())){
+  while (ticks - ticks0 < n)
+  {
+    if (killed(myproc()))
+    {
       release(&tickslock);
       return -1;
     }
@@ -96,14 +98,19 @@ sys_sysinfo(void)
   int param;
   argint(0, &param);
 
-  if (param == 0) {
+  if (param == 0)
+  {
     return total_active_process_count();
-  }else if (param == 1) {
+  }
+  else if (param == 1)
+  {
     return get_total_num_syscalls();
-  }else if (param == 2) {
+  }
+  else if (param == 2)
+  {
     return num_free_pages();
   }
-  
+
   return -1;
 }
 
@@ -113,11 +120,12 @@ sys_procinfo(void)
   uint64 pinfo_ptr; // user pointer to pinfo struct to be filled.
   argaddr(0, &pinfo_ptr);
 
-  if (pinfo_ptr == 0) {
+  if (pinfo_ptr == 0)
+  {
     // User provided nullptr.
     return -1;
   }
-  
+
   struct pinfo in;
   struct proc *p = myproc();
 
@@ -125,7 +133,23 @@ sys_procinfo(void)
   fill_pinfo(p, &in);
 
   // copy the pinfo struct back to user space.
-  if(copyout(p->pagetable, pinfo_ptr, (char *)&in, sizeof(in)) < 0)
-      return -1;
+  if (copyout(p->pagetable, pinfo_ptr, (char *)&in, sizeof(in)) < 0)
+    return -1;
+  return 0;
+}
+
+uint64
+sys_sched_statistics(void)
+{
+
+  sched_statistics();
+  return 0;
+}
+
+int sys_sched_tickets(void)
+{
+  int n;
+  argint(0, &n);
+  sched_tickets(n);
   return 0;
 }

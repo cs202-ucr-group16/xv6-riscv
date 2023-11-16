@@ -142,7 +142,11 @@ found:
   p->state = USED;
   p->num_syscalls = 0;
   p->ticks = 0;
+#if defined(LOTTERY)
+  p->tickets = 1;
+#else
   p->tickets = 10000;
+#endif
 
   // Allocate a trapframe page.
   if ((p->trapframe = (struct trapframe *)kalloc()) == 0)
@@ -340,6 +344,7 @@ int fork(void)
 
   acquire(&wait_lock);
   np->parent = p;
+  np->tickets = proc->tickets;
   release(&wait_lock);
 
   acquire(&np->lock);
@@ -527,10 +532,12 @@ int getTotalTickets(void)
   int total = 0;
   for (p = proc; p < &proc[NPROC]; p++)
   {
+    acquire(&p->lock);
     if (p->state == RUNNABLE)
     {
       total += p->tickets;
     }
+    release(&p->lock);
   }
   return total;
 }
@@ -558,6 +565,16 @@ void scheduler(void)
 
     // Avoid deadlock by ensuring that devices can interrupt.
     intr_on();
+
+    // Get total number of tickets.
+    int total_ticket_count = getTotalTickets();
+
+    // Select a winning ticket randomly and limit it to range of total ticket counts.
+    int winning_ticket = ((int)rand()) % total_ticket_count + 1;
+
+    // Last winner ticket that will be selecting the current process.
+    int curr_process_last_ticket = 0;
+
     // int total_tickets = getTotalTickets();
     for (p = proc; p < &proc[NPROC]; p++)
     {
@@ -567,22 +584,14 @@ void scheduler(void)
         release(&p->lock);
         continue;
       }
-      int total_tickets = getTotalTickets();
-      int choosenTicket = -1;
-      if (total_tickets > 0 || choosenTicket <= 0)
-      {
-        choosenTicket = ((int)rand()) % total_tickets;
-      }
-      // Adjust the choosenTicket based on the number of tickets the current process has
-      choosenTicket -= - p->tickets;
-      if (choosenTicket >= 0)
-      {
+
+      curr_process_last_ticket+=p->tickets;
+
+      if (winning_ticket > curr_process_last_ticket) {
+        // We still couldn't find the winner, we should check next proc.
         release(&p->lock);
         continue;
       }
-      // If the process is RUNNABLE, mark it as RUNNING, update ticks, and perform context switch
-      if (p->state == RUNNABLE)
-      {
 
         p->state = RUNNING;
         p->ticks += 1;
@@ -590,8 +599,8 @@ void scheduler(void)
         swtch(&c->context, &p->context);
 
         c->proc = 0;
-      }
       release(&p->lock);
+      break;
     }
 
 #elif defined(STRIDE)
@@ -607,6 +616,7 @@ void scheduler(void)
     for (p = proc; p < &proc[NPROC]; p++)
     {
       acquire(&p->lock);
+
 
       if (p->state == RUNNABLE && (p->pass <= minPass || minPass < 0))
       {

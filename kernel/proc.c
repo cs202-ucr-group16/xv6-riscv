@@ -142,11 +142,7 @@ found:
   p->state = USED;
   p->num_syscalls = 0;
   p->ticks = 0;
-#if defined(LOTTERY)
-  p->tickets = 1;
-#else
   p->tickets = 10000;
-#endif
 
   // Allocate a trapframe page.
   if ((p->trapframe = (struct trapframe *)kalloc()) == 0)

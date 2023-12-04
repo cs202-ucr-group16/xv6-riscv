@@ -5,6 +5,8 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include  "stdint.h"
+#include  "stddef.h"
 
 struct cpu cpus[NCPU];
 
@@ -14,6 +16,9 @@ struct proc *initproc;
 
 int nextpid = 1;
 struct spinlock pid_lock;
+
+int next_tid = 1;
+struct spinlock tid_lock;
 
 extern void forkret(void);
 static void freeproc(struct proc *p);
@@ -51,6 +56,7 @@ procinit(void)
   
   initlock(&pid_lock, "nextpid");
   initlock(&wait_lock, "wait_lock");
+  initlock(&tid_lock, "next_tid");
   for(p = proc; p < &proc[NPROC]; p++) {
       initlock(&p->lock, "proc");
       p->state = UNUSED;
@@ -102,6 +108,49 @@ allocpid()
   return pid;
 }
 
+int alloctid()
+{
+  acquire(&tid_lock);
+  int thread_id = next_tid; 
+  next_tid = next_tid + 1;
+  release(&tid_lock);
+  return thread_id;
+}
+
+static struct proc*
+thread_alloc(void)
+{
+  struct proc *temp;
+  //Iterate over the proc array to find an unused process slot
+  for (temp=proc; temp < &proc[NPROC]; temp++)
+  {
+    acquire(&temp->lock);
+    if(temp->state == UNUSED) 
+     goto found;
+    else {
+      release(&temp->lock);
+    }
+  }
+  return 0;
+  found:
+    temp->pid = allocpid();
+    temp->state = USED;
+    temp->thread_id = alloctid();
+    //memory is allocated for trap frame
+    if((temp->trapframe = (struct trapframe *)kalloc())==0){
+      freeproc(temp);
+      release(&temp->lock);
+      return 0;
+    }
+    
+  // Set up new context to start executing at forkret,
+  // which returns to user space.
+    memset(&temp->context,0,sizeof(temp->context));
+    temp->context.ra = (uint64)forkret;
+    temp->context.sp = temp->kstack + PGSIZE;
+    return temp;
+}
+
 // Look in the process table for an UNUSED proc.
 // If found, initialize state required to run in the kernel,
 // and return with p->lock held.
@@ -149,6 +198,12 @@ found:
   return p;
 }
 
+// Function to free the page table entries corresponding to a specific thread within a process
+void proc_freepagetable_thread(pagetable_t pagetable , uint64 sz , int threadid){
+  // Unmap the memory region allocated for the thread within the process's address space
+  uvmunmap(pagetable,TRAPFRAME - (PGSIZE*threadid),1,0);
+}
+
 // free a proc structure and the data hanging from it,
 // including user pages.
 // p->lock must be held.
@@ -158,8 +213,11 @@ freeproc(struct proc *p)
   if(p->trapframe)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
-  if(p->pagetable)
-    proc_freepagetable(p->pagetable, p->sz);
+  if(p->thread_id !=0 && p->pagetable !=0){
+    proc_freepagetable_thread(p->pagetable , p->sz , p->thread_id);
+  }else if(p->pagetable != 0){
+     proc_freepagetable(p->pagetable , p->sz );
+  }
   p->pagetable = 0;
   p->sz = 0;
   p->pid = 0;
@@ -169,6 +227,8 @@ freeproc(struct proc *p)
   p->killed = 0;
   p->xstate = 0;
   p->state = UNUSED;
+  // make process threadid to 0
+  p->thread_id=0;
 }
 
 // Create a user page table for a given process, with no user memory,
@@ -340,6 +400,61 @@ reparent(struct proc *p)
   }
 }
 
+int 
+clone(void *stack)
+{
+  struct proc *temp;
+  struct proc *p = myproc();
+  if (stack == NULL)
+  {
+    return -1;
+  }
+
+  if ((temp = thread_alloc()) == 0) {
+    return -1;
+  }
+
+  temp->pagetable = p->pagetable;
+
+  // Check if mapping the pages in the pagetable is possible
+  if(mappages(temp->pagetable, TRAPFRAME - (PGSIZE * temp->thread_id), PGSIZE,(uint64)(temp->trapframe), PTE_R | PTE_W) < 0){
+
+    // unmap trampoline and free page table
+    uvmunmap(temp->pagetable, TRAMPOLINE, 1, 0);uvmfree(temp->pagetable,0);
+    return 0; 
+  }
+  // Copy the size from the process p to  temp
+  temp->sz = p->sz;
+  // Copy the trapframe contents
+  *(temp->trapframe) = *(p->trapframe);
+
+  // Set the stack pointer of temp's trapframe to the top 
+  temp->trapframe->sp = (uint64) (stack + 4096 * sizeof(void));
+  temp->trapframe->a0 = 0;
+
+  for(int i=0;i< NOFILE; i++)
+    if(p->ofile[i])
+      temp->ofile[i] = filedup(p->ofile[i]);
+
+  // // Duplicate the current working directory
+  temp->cwd = idup(p->cwd);
+
+  // copy the name of process p to temp's name
+  safestrcpy(temp->name, p->name, sizeof(p->name));
+
+  release(&temp->lock);
+  // safely update the parent and release the wait lock
+  acquire(&wait_lock);
+  temp->parent = p;
+  release(&wait_lock);
+
+  acquire(&temp->lock);
+  temp->state= RUNNABLE;
+  release(&temp->lock);
+  
+  return temp->thread_id; //retrun the allocated thread ID
+}
+
 // Exit the current process.  Does not return.
 // An exited process remains in the zombie state
 // until its parent calls wait().
@@ -352,11 +467,13 @@ exit(int status)
     panic("init exiting");
 
   // Close all open files.
-  for(int fd = 0; fd < NOFILE; fd++){
-    if(p->ofile[fd]){
-      struct file *f = p->ofile[fd];
-      fileclose(f);
-      p->ofile[fd] = 0;
+  if(p->thread_id == 0){
+    for(int fd = 0; fd < NOFILE; fd++){
+      if(p->ofile[fd]){
+        struct file *f = p->ofile[fd];
+        fileclose(f);
+        p->ofile[fd] = 0;
+      }
     }
   }
 
